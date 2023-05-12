@@ -6,7 +6,7 @@
 import 'vs/platform/update/common/update.config.contribution';
 
 import { app, dialog } from 'electron';
-import { unlinkSync } from 'fs';
+import { unlinkSync } from 'fs'; // 파일 삭제
 import { URI } from 'vs/base/common/uri';
 import { coalesce, distinct } from 'vs/base/common/arrays';
 import { Promises } from 'vs/base/common/async';
@@ -90,6 +90,13 @@ class CodeMain {
 		}
 	}
 
+	/**
+	 * startup에서는 다음과 같은 일들을 한다.
+	 * 1. 가장 먼저 에러 핸들러를 set한다.
+	 * 2. 서비스를 생성하고 init한다.
+	 * 3. environmentMainService, userDataProfilesMainService, configurationService, stateMainService, bufferLogService, productService는 initServices에서,
+	 * 4. instantiationService는 invokeFunction을 통해 생성한다.
+	 */
 	private async startup(): Promise<void> {
 
 		// Set the error handler early enough so that we are not getting the
@@ -147,6 +154,20 @@ class CodeMain {
 		}
 	}
 
+	/**
+	 * ServiceCollection, DisposableStore를 생성합니다. 그리고 process.exit가 호출되면 DisposableStore를 dispose해서 각종 Disposable들을 dispose합니다.
+	 * 각 서비스는, ServiceCollection의 set을 통해 등록됩니다. 이때 인터페이스(identifier로 취급됩니다)와 인스턴스를 동시에 넣어줍니다.
+	 * ProductService: product.json의 내용을 가져옵니다.
+	 * EnvironmentMainService: resolveArgs를 통해 args를 가져오고, 이를 통해 process.env를 patch합니다.
+	 * LoggerMainService & BufferLogger: 로깅을 위한 서비스입니다.
+	 * FileService: 파일 시스템을 다루기 위한 서비스입니다. fs를 Wrapping한 형태입니다. 이후 DiskFileSystemProvider를 통해 파일 시스템을 다룹니다. file:// 등의 scheme도 같이 넣어줍니다.
+	 * FileService는 파일 관련 Event를 발생시킵니다.
+	 * UriIdentityService: uri를 비교하기 위한 서비스입니다.
+	 * StateService: state를 다루기 위한 서비스입니다. state는 key-value 형태로 저장됩니다. FileStorage를 통해 파일로 저장됩니다.
+	 * 그 외 UserDataProfilesMainService, ConfigurationService 등등
+	 *
+	 * 마지막에 new InstantiationService(services, true)를 통해 InstantiationService를 생성하고, 나머지 서비스들과 같이 리턴합니다.
+	 */
 	private createServices(): [IInstantiationService, IProcessEnvironment, IEnvironmentMainService, ConfigurationService, StateService, BufferLogger, IProductService, UserDataProfilesMainService] {
 		const services = new ServiceCollection();
 		const disposables = new DisposableStore();
@@ -239,6 +260,10 @@ class CodeMain {
 		return instanceEnvironment;
 	}
 
+	/**  여기서 각종 서비스들을 init합니다. 예를 들어,
+	 * 1. 환경변수를 읽어서 process.env에 넣습니다.
+	 * 2. stateService 같은 경우는 storagePath에서 파일을 읽어서, 이를 JSON.parse한 후 state에 넣습니다.
+	*/
 	private async initServices(environmentMainService: IEnvironmentMainService, userDataProfilesMainService: UserDataProfilesMainService, configurationService: ConfigurationService, stateService: StateService, productService: IProductService): Promise<void> {
 		await Promises.settled<unknown>([
 
@@ -434,6 +459,7 @@ class CodeMain {
 		}
 	}
 
+	// lifecycleMainService를 통해 app을 종료시킵니다.
 	private quit(accessor: ServicesAccessor, reason?: ExpectedError | Error): void {
 		const logService = accessor.get(ILogService);
 		const lifecycleMainService = accessor.get(ILifecycleMainService);
@@ -459,8 +485,9 @@ class CodeMain {
 		lifecycleMainService.kill(exitCode);
 	}
 
-	//#region Command line arguments utilities
+	// Argument parsing하는 util method.
 
+	//#region Command line arguments utilities
 	private resolveArgs(): NativeParsedArgs {
 
 		// Parse arguments

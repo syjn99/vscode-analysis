@@ -123,11 +123,20 @@ import { firstOrDefault } from 'vs/base/common/arrays';
  * The main VS Code application. There will only ever be one instance,
  * even if the user starts many instances (e.g. from the command line).
  */
+
+/**
+ * Security를 위한 region을 주석 처리해, 관련 코드들을 보호하는 방법을 사용했습니다.
+ */
 export class CodeApplication extends Disposable {
 
 	private windowsMainService: IWindowsMainService | undefined;
 	private nativeHostMainService: INativeHostMainService | undefined;
 
+	/**
+ * CodeApplication은 main.ts에서, createInstance를 통해 생성됩니다.
+ * createInstance는, Reflect.construct()의 Wrapping된 형태로, 따로 new CodeApplication()을 호출하지 않고도 생성자를 호출할 수 있게 해줍니다.
+ * 인자로 받은 서비스들은 main.ts에서 생성되어 전달되고, 이곳에서 사용됩니다.
+ */
 	constructor(
 		private readonly mainProcessNodeIpcServer: NodeIPCServer,
 		private readonly userEnv: IProcessEnvironment,
@@ -322,6 +331,20 @@ export class CodeApplication extends Disposable {
 		//#endregion
 	}
 
+	/**
+	 * process와 Electron app에서 발생하는 이벤트들에 대한 리스너입니다.
+	 *
+	 * process에서 발생하는 에러들을 핸들하기 위한, setUnexpectedErrorHandler를 호출합니다.
+	 * Disposable 패턴을 사용해, shutdown 시 this.dispose()를 호출합니다.
+	 *
+	 * registerContextMenuListener() 같은 경우, 앱에서 우클릭을 할 때 생겨나는 메뉴입니다. 리스너를 등록하면서 클릭 이벤트가 발생할 때마다 메뉴를 만듭니다.
+	 *
+	 * macOS의 경우, 앱이 activate되면 다시 창을 띄웁니다.
+	 *
+	 * 보안을 위해, web-contents-created에 대한 리스너를 등록합니다.
+	 *
+	 * ipc 핸들러를 등록합니다. ipcMain.ts에 Electron의 ipcMain을 wrapping한 validatedIpcMain을 사용합니다.
+	 */
 	private registerListeners(): void {
 
 		// We handle uncaught exceptions here to prevent electron from opening a dialog to the user
